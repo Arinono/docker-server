@@ -1,0 +1,109 @@
+version: '3.7'
+
+services:
+  pihole:
+    image: pihole/pihole
+    restart: always
+    network_mode: 'service:vpn'
+    depends_on:
+      - vpn
+    environment:
+      - TZ=Europe/Paris
+      - WEBPASSWORD=${PIHOLE_WEBPASSWD}
+      - ServerIP=${TUNNEL_ENDPOINT}
+      - INTERFACE=${TUNNEL_INTERFACE}
+      - DNS_MASQ_LISTENING=single
+    volumes:
+      - /etc/localtime:/etc/localtime
+      - pihole-data:/etc/pihole
+      - dnsmasq-data:/etc/dnsmasq.d
+
+  # database:
+  #   image: mongo
+  #   restart: always
+  #   environment:
+  #     - MONGO_INITDB_ROOT_USERNAME=root
+  #     - MONGO_INITDB_ROOT_PASSWORD=${PIHOLE_WEBPASSWD}
+  #     - MONGO_INITDB_DATABASE=pritunl-zero
+  #   volumes:
+  #     - /etc/localtime:/etc/localtime
+  #     - mongo-data:/data/db
+  #   labels:
+  #     - traefik.enable=false
+
+  # vpn:
+  #   image: pritunl/pritunl-zero
+  #   restart: always
+  #   depends_on:
+  #     - database
+  #   environment:
+  #     - MONGO_URI=mongodb://database:27017/pritunl-zero
+  #     - NODE_ID=${PRITUNL_NODE_ID}
+  #   volumes:
+  #     - /etc/localtime:/etc/localtime
+  #   labels:
+  #     - traefik.enable=true
+  #     - traefik.port=80
+  #     - traefik.frontend.rule=Host:pritunl.${DOMAINNAME}
+  #     - traefik.network=traefik
+  #   networks:
+  #     - traefik
+
+  vpn:
+    image: kylemanna/openvpn
+    restart: always
+    command: ['/etc/openvpn/start.sh']
+    volumes:
+      - openvpn-data:/etc/openvpn
+    ports:
+      - 1194:1194/udp
+    expose:
+      - 53/tcp
+      - 53/udp
+      - 80/tcp
+      - 443/tcp
+    cap_add:
+      - NET_ADMIN
+    networks:
+      - traefik
+    labels:
+      - traefik.enable=true
+      - traefik.port=80
+      - traefik.frontend.rule=HostRegexp:pihole.arino.io,{catchall:.*}
+      - traefik.network=traefik
+      - traefik.frontend.priority=1
+      - traefik.headers.SSLRedirect=true
+      - traefik.frontend.headers.STSSeconds=315360000
+      - traefik.frontend.headers.browserXSSFilter=true
+      - traefik.frontend.headers.contentTypeNosniff=true
+      - traefik.frontend.headers.forceSTSHeader=true
+      - traefik.frontend.headers.SSLHost=arino.io
+      - traefik.frontend.headers.STSIncludeSubdomains=true
+      - traefik.frontend.headers.STSPreload=true
+      - traefik.frontend.headers.frameDeny=true
+
+networks:
+  traefik:
+    external: true
+
+volumes:
+  openvpn-data:
+    external: true
+  pihole-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/data/docker-host/pihole
+  dnsmasq-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/data/docker-host/pihole/dns
+  # mongo-data:
+  #   driver: local
+  #   driver_opts:
+  #     type: none
+  #     o: bind
+  #     device: /var/data/docker-host/pritunl/mongo

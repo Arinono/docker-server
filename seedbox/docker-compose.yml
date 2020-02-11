@@ -1,0 +1,118 @@
+version: '3.7'
+
+services:
+  pms:
+    image: plexinc/pms-docker
+    container_name: plex
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ}
+    networks:
+      - traefik
+    ports:
+      - 32400:32400/tcp
+      - 3005:3005/tcp
+      - 8324:8324/tcp
+      - 32469:32469/tcp
+      - 1900:1900/udp
+      - 32410:32410/udp
+      - 32412:32412/udp
+      - 32413:32413/udp
+      - 32414:42414/udp
+    volumes:
+      - plex-database:/config
+      - plex-transcode:/transcode
+      - seedbox-media:/data
+      - /etc/localtime:/etc/localtime
+    labels:
+      traefik.enable: true
+      traefik.http.routers.plex.entrypoints: websecure
+      traefik.http.routers.plex.rule: Host(`plex.${DOMAINNAME}`)
+      traefik.http.routers.plex.tls: true
+      traefik.http.routers.plex.tls.certresolver: cloudflare
+      traefik.http.services.plex.loadbalancer.server.port: 32400
+    
+  rutorrent:
+    user: root
+    container_name: rutorrent
+    privileged: true
+    image: diameter/rtorrent-rutorrent
+    restart: unless-stopped
+    ports:
+      - 49160:49160/udp
+      - 49161:49161
+      - 8000:80
+    networks:
+      - traefik
+    volumes:
+      - seedbox-media:/downloads
+    labels:
+      traefik.enable: true
+      traefik.http.routers.rutorrent.entrypoints: websecure
+      traefik.http.routers.rutorrent.rule: Host(`rutorrent.${DOMAINNAME}`)
+      traefik.http.routers.rutorrent.tls: true
+      traefik.http.routers.rutorrent.tls.certresolver: cloudflare
+      traefik.http.services.rutorrent.loadbalancer.server.port: 443
+
+  explorer:
+    image: nginx
+    restart: unless-stopped
+    networks:
+      - traefik
+    volumes:
+      - seedbox-media:/usr/share/nginx/html
+      - ./explorer.conf:/etc/nginx/nginx.conf:ro
+      - /etc/localtime:/etc/localtime:ro
+    labels:
+      traefik.enable: true
+      traefik.http.routers.seedbox-explorer.entrypoints: websecure
+      traefik.http.routers.seedbox-explorer.rule: Host(`files.seedbox.${DOMAINNAME}`)
+      traefik.http.routers.seedbox-explorer.tls: true
+      traefik.http.routers.seedbox-explorer.tls.certresolver: cloudflare
+      traefik.http.services.seedbox-explorer.loadbalancer.server.port: 443
+      
+  flexget:
+    image: cpoppema/docker-flexget
+    restart: always
+    container_name: flexget
+    volumes:
+      - flexget-data:/config
+      - seedbox-media:/downloads
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - PGID=1001
+      - PUID=1000
+      - TORRENT_PLUGIN=rtorrent
+      - TZ=${TZ}
+      - FLEXGET_LOG=debug
+
+networks:
+  traefik:
+    external: true
+
+volumes:
+  seedbox-media:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/data/docker-host/seedbox/media
+  plex-database:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/data/docker-host/seedbox/plex/database
+  plex-transcode:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/data/docker-host/seedbox/plex/transcode
+  flexget-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/data/docker-host/seedbox/flexget
+        
