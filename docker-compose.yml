@@ -3,6 +3,8 @@ version: '3.8'
 
 x-defaults: &defaults
   restart: always
+  depends_on:
+    - traefik
   networks:
     - traefik
   environment: &environment
@@ -12,9 +14,11 @@ x-defaults: &defaults
 
 services:
   traefik:
-    <<: *defaults
+    restart: always
     image: traefik:rocamadour
     container_name: traefik
+    networks:
+      - traefik
     command:
       --api.insecure=true
       --api.dashboard=true
@@ -123,6 +127,7 @@ services:
     image: pihole/pihole
     container_name: pihole
     depends_on:
+      - traefik
       - wireguard
     networks:
       traefik:
@@ -191,6 +196,7 @@ services:
     <<: *defaults
     image: ghcr.io/flaresolverr/flaresolverr
     container_name: flaresolverr
+    depends_on: []
     networks:
       - jackett
     environment:
@@ -203,6 +209,7 @@ services:
     image: lscr.io/linuxserver/jackett
     container_name: jackett
     depends_on:
+      - traefik
       - flaresolverr
     networks:
       - jackett
@@ -240,6 +247,59 @@ services:
       traefik.http.routers.transmission.middlewares: basic-auth
       traefik.http.services.transmission.loadbalancer.server.port: 9091
 
+  shlink-db:
+    restart: always
+    image: postgres
+    container_name: shlink-db
+    environment:
+      <<: *environment
+      POSTGRES_DB: shlink
+      POSTGRES_USER: shlink
+      POSTGRES_PASSWORD: ${SHLINK_DB_PASSWD}
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - shlink-db:/var/lib/postgresql/data
+
+  shlink:
+    <<: *defaults
+    image: shlinkio/shlink:stable
+    container_name: shlink
+    depends_on:
+      - traefik
+      - shlink-db
+    environment:
+      <<: *environment
+      DEFAULT_DOMAIN: shlink.${APEX}
+      IS_HTTPS_ENABLED: 'true'
+      DB_DRIVER: postgres
+      DB_NAME: shlink
+      DB_USER: shlink
+      DB_PASSWORD: ${SHLINK_DB_PASSWD}
+      DB_HOST: shlink-db
+      DB_PORT: 5432
+    labels:
+      traefik.enable: true
+      traefik.http.routers.shlink.entrypoints: websecure
+      traefik.http.routers.shlink.rule: Host(`shlink.${APEX}`)
+      traefik.http.routers.shlink.tls: true
+      traefik.http.routers.shlink.tls.certresolver: cloudflare
+      traefik.http.services.shlink.loadbalancer.server.port: 8080
+
+  shlink-client:
+    <<: *defaults
+    image: shlinkio/shlink-web-client
+    container_name: shlink-client
+    depends_on:
+      - traefik
+      - shlink
+    labels:
+      traefik.enable: true
+      traefik.http.routers.shlink-client.entrypoints: websecure
+      traefik.http.routers.shlink-client.rule: Host(`client.shlink.${APEX}`)
+      traefik.http.routers.shlink-client.tls: true
+      traefik.http.routers.shlink-client.tls.certresolver: cloudflare
+      traefik.http.routers.shlink-client.middlewares: basic-auth
+      traefik.http.services.shlink-client.loadbalancer.server.port: 80
 
 networks:
   traefik:
@@ -311,4 +371,9 @@ volumes:
     driver_opts:
       <<: *volume_conf
       device: /var/data/docker-host/wireguard
+  shlink-db:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/shlink/database
 ...
