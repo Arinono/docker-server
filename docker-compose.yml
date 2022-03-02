@@ -112,7 +112,7 @@ services:
     environment:
       <<: *environment
       SERVERURL: wireguard.${APEX}
-      PEERS: 4
+      PEERS: minimacarino,ipad,iphone,windows
       PEERDNS: 172.24.0.3
     volumes:
       - wireguard-data:/config
@@ -138,6 +138,8 @@ services:
     environment:
       <<: *environment
       DNS_MASQ_LISTENING: single
+    volumes:
+      - pihole-data:/etc/pihole
     labels:
       traefik.enable: true
       traefik.http.middlewares.pihole-redirect.redirectregex.regex: ^http[s]?://pihole\.${APEX}[/]?$$
@@ -248,7 +250,7 @@ services:
       traefik.http.services.transmission.loadbalancer.server.port: 9091
 
   shlink-db:
-    restart: always
+    <<: *defaults
     image: postgres
     container_name: shlink-db
     environment:
@@ -260,6 +262,7 @@ services:
     volumes:
       - shlink-db:/var/lib/postgresql/data
 
+  # d exec -t shlink shlink api-key:generate
   shlink:
     <<: *defaults
     image: shlinkio/shlink:stable
@@ -289,9 +292,6 @@ services:
     <<: *defaults
     image: shlinkio/shlink-web-client
     container_name: shlink-client
-    depends_on:
-      - traefik
-      - shlink
     labels:
       traefik.enable: true
       traefik.http.routers.shlink-client.entrypoints: websecure
@@ -370,7 +370,12 @@ volumes:
     driver: local
     driver_opts:
       <<: *volume_conf
-      device: /var/data/docker-host/wireguard
+      device: /var/data/docker-host/wireguard/config
+  pihole-data:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/pihole
   shlink-db:
     driver: local
     driver_opts:
