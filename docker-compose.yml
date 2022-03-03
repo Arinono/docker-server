@@ -3,8 +3,6 @@ version: '3.8'
 
 x-defaults: &defaults
   restart: always
-  depends_on:
-    - traefik
   networks:
     - traefik
   environment: &environment
@@ -20,12 +18,13 @@ services:
     networks:
       - traefik
     command:
+      --ping
       --api.insecure=true
       --api.dashboard=true
       --providers.docker
       --providers.docker.endpoint=unix:///var/run/docker.sock
       --providers.docker.exposedbydefault=false
-      --providers.docker.network=traefik
+      --providers.docker.network=docker-server_traefik
       --entrypoints.web.address=:80
       --entrypoints.websecure.address=:443
       --log.level=DEBUG
@@ -47,6 +46,11 @@ services:
     environment:
       <<: *environment
       CLOUDFLARE_DNS_API_TOKEN: ${CF_DNS_API_TOKEN}
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
     labels:
       traefik.enable: true
       traefik.http.middlewares.https-redirect.redirectscheme.scheme: https
@@ -70,6 +74,8 @@ services:
     volumes:
       - /var/data/docker-host/traefik/certs/acme.json:/acme.json:ro
       - traefik-dump:/dump
+    healthcheck:
+      disable: true
 
   portainer:
     <<: *defaults
@@ -78,6 +84,11 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer-data:/data
+    healthcheck:
+      test: ["CMD", "/docker", "container", "top", "portainer"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
     labels:
       traefik.enable: true
       traefik.http.routers.portainer.entrypoints: websecure
@@ -91,6 +102,11 @@ services:
     build:
       context: aurelien.arino.io
     container_name: aurelien.arino.io-reverse-proxy
+    healthcheck:
+      test: ["CMD", "service", "nginx", "status"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
     labels:
       traefik.enable: true
       traefik.http.routers.aurelien-arino-io.entrypoints: websecure
@@ -121,13 +137,14 @@ services:
       - 51820:51820/udp
     sysctls:
       - net.ipv4.conf.all.src_valid_mark=1
+    healthcheck:
+      disable: true
 
   pihole:
     <<: *defaults
     image: pihole/pihole
     container_name: pihole
     depends_on:
-      - traefik
       - wireguard
     networks:
       traefik:
@@ -145,12 +162,17 @@ services:
       traefik.http.middlewares.pihole-redirect.redirectregex.regex: ^http[s]?://pihole\.${APEX}[/]?$$
       traefik.http.middlewares.pihole-redirect.redirectregex.replacement: https://pihole.${APEX}/admin
       traefik.http.middlewares.pihole-redirect.redirectregex.permanent: true
+      traefik.http.routers.pihole.middlewares: pihole-redirect
       traefik.http.routers.pihole.entrypoints: websecure
       traefik.http.routers.pihole.rule: Host(`pihole.${APEX}`)
-      traefik.http.routers.pihole.middlewares: pihole-redirect
       traefik.http.routers.pihole.tls: true
       traefik.http.routers.pihole.tls.certresolver: cloudflare
       traefik.http.services.pihole.loadbalancer.server.port: 80
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
 
   plexmediaserver:
     <<: *defaults
@@ -169,7 +191,10 @@ services:
     volumes:
       - plex-database:/config
       - plex-transcode:/transcode
-      - media:/data
+      - plex-movies:/data/movies
+      - plex-tvshows:/data/tvshows
+      - plex-animes:/data/animes
+      - plex-animated-movies:/data/animated-movies
     labels:
       traefik.enable: true
       traefik.http.routers.plex.entrypoints: websecure
@@ -193,12 +218,16 @@ services:
       traefik.http.routers.media-browser.tls: true
       traefik.http.routers.media-browser.tls.certresolver: cloudflare
       traefik.http.services.media-browser.loadbalancer.server.port: 80
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
 
   flaresolverr:
     <<: *defaults
     image: ghcr.io/flaresolverr/flaresolverr
     container_name: flaresolverr
-    depends_on: []
     networks:
       - jackett
     environment:
@@ -211,14 +240,13 @@ services:
     image: lscr.io/linuxserver/jackett
     container_name: jackett
     depends_on:
-      - traefik
       - flaresolverr
     networks:
       - jackett
       - traefik
     environment:
       <<: *environment
-      AUTO_UPDATE: 'true'
+      AUTO_UPDATE: 'false'
     volumes:
       - jackett-config:/config
       - jackett-blackhole:/downloads
@@ -229,13 +257,18 @@ services:
       traefik.http.routers.jackett.tls: true
       traefik.http.routers.jackett.tls.certresolver: cloudflare
       traefik.http.services.jackett.loadbalancer.server.port: 9117
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9117/UI/Dashboard"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
   
   transmission:
     <<: *defaults
     image: lscr.io/linuxserver/transmission
     container_name: transmission
     volumes:
-      - media:/downloads
+      - transmission-downloads:/downloads
       - transmission-config:/config
     ports:
       - 51413:51413
@@ -248,6 +281,34 @@ services:
       traefik.http.routers.transmission.tls.certresolver: cloudflare
       traefik.http.routers.transmission.middlewares: basic-auth
       traefik.http.services.transmission.loadbalancer.server.port: 9091
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+
+  sonarr:
+    <<: *defaults
+    image: lscr.io/linuxserver/sonarr
+    container_name: sonarr
+    volumes:
+      - sonarr-data:/config
+      - plex-animes:/tv/animes
+      - plex-tvshows:/tv/tvshows
+      - transmission-downloads:/downloads
+    labels:
+      traefik.enable: true
+      traefik.http.routers.sonarr.entrypoints: websecure
+      traefik.http.routers.sonarr.rule: Host(`sonarr.${APEX}`)
+      traefik.http.routers.sonarr.tls: true
+      traefik.http.routers.sonarr.tls.certresolver: cloudflare
+      traefik.http.routers.sonarr.middlewares: basic-auth
+      traefik.http.services.sonarr.loadbalancer.server.port: 8989
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8989"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
 
   shlink-db:
     <<: *defaults
@@ -261,6 +322,11 @@ services:
       PGDATA: /var/lib/postgresql/data
     volumes:
       - shlink-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "shlink", "-d", "shlink"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
 
   # d exec -t shlink shlink api-key:generate
   shlink:
@@ -268,7 +334,6 @@ services:
     image: shlinkio/shlink:stable
     container_name: shlink
     depends_on:
-      - traefik
       - shlink-db
     environment:
       <<: *environment
@@ -287,6 +352,11 @@ services:
       traefik.http.routers.shlink.tls: true
       traefik.http.routers.shlink.tls.certresolver: cloudflare
       traefik.http.services.shlink.loadbalancer.server.port: 8080
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/rest/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
 
   shlink-client:
     <<: *defaults
@@ -300,6 +370,11 @@ services:
       traefik.http.routers.shlink-client.tls.certresolver: cloudflare
       traefik.http.routers.shlink-client.middlewares: basic-auth
       traefik.http.services.shlink-client.loadbalancer.server.port: 80
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
 
 networks:
   traefik:
@@ -341,6 +416,26 @@ volumes:
     driver_opts:
       <<: *volume_conf
       device: /var/data/docker-host/media
+  plex-animes:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/media/plex/animes
+  plex-movies:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/media/plex/movies
+  plex-tvshows:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/media/plex/tvshows
+  plex-animated-movies:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/media/plex/animated-movies
   plex-database:
     driver: local
     driver_opts:
@@ -366,6 +461,11 @@ volumes:
     driver_opts:
       <<: *volume_conf
       device: /var/data/docker-host/transmission
+  transmission-downloads:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/media/transmission
   wireguard-data:
     driver: local
     driver_opts:
@@ -381,4 +481,9 @@ volumes:
     driver_opts:
       <<: *volume_conf
       device: /var/data/docker-host/shlink/database
+  sonarr-data:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/arr/sonarr
 ...
