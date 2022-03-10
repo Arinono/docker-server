@@ -191,10 +191,7 @@ services:
     volumes:
       - plex-database:/config
       - plex-transcode:/transcode
-      - plex-movies:/data/movies
-      - plex-tvshows:/data/tvshows
-      - plex-animes:/data/animes
-      - plex-animated-movies:/data/animated-movies
+      - plex-media:/data
     labels:
       traefik.enable: true
       traefik.http.routers.plex.entrypoints: websecure
@@ -229,11 +226,36 @@ services:
     image: ghcr.io/flaresolverr/flaresolverr
     container_name: flaresolverr
     networks:
-      - jackett
+      - flaresolverr
     environment:
       <<: *environment
       LOG_LEVEL: debug
       CAPTCHA_SOLVER: hcaptcha-solver
+
+  prowlarr:
+    <<: *defaults
+    image: lscr.io/linuxserver/prowlarr:develop
+    container_name: prowlarr
+    depends_on:
+      - flaresolverr
+    networks:
+      - flaresolverr
+      - traefik
+    volumes:
+      - prowlarr-data:/config
+    labels:
+      traefik.enable: true
+      traefik.http.routers.prowlarr.entrypoints: websecure
+      traefik.http.routers.prowlarr.rule: Host(`prowlarr.${APEX}`)
+      traefik.http.routers.prowlarr.tls: true
+      traefik.http.routers.prowlarr.tls.certresolver: cloudflare
+      traefik.http.routers.prowlarr.middlewares: basic-auth
+      traefik.http.services.prowlarr.loadbalancer.server.port: 9696
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9696"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
 
   jackett:
     <<: *defaults
@@ -242,7 +264,7 @@ services:
     depends_on:
       - flaresolverr
     networks:
-      - jackett
+      - flaresolverr
       - traefik
     environment:
       <<: *environment
@@ -293,8 +315,7 @@ services:
     container_name: sonarr
     volumes:
       - sonarr-data:/config
-      - plex-animes:/tv/animes
-      - plex-tvshows:/tv/tvshows
+      - media:/data
       - transmission-downloads:/downloads
     labels:
       traefik.enable: true
@@ -306,6 +327,28 @@ services:
       traefik.http.services.sonarr.loadbalancer.server.port: 8989
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8989"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+
+  radarr:
+    <<: *defaults
+    image: lscr.io/linuxserver/radarr
+    container_name: radarr
+    volumes:
+      - radarr-data:/config
+      - media:/data
+      - transmission-downloads:/downloads
+    labels:
+      traefik.enable: true
+      traefik.http.routers.radarr.entrypoints: websecure
+      traefik.http.routers.radarr.rule: Host(`radarr.${APEX}`)
+      traefik.http.routers.radarr.tls: true
+      traefik.http.routers.radarr.tls.certresolver: cloudflare
+      traefik.http.routers.radarr.middlewares: basic-auth
+      traefik.http.services.radarr.loadbalancer.server.port: 7878
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7878"]
       interval: 5s
       timeout: 5s
       retries: 6
@@ -379,7 +422,7 @@ services:
 networks:
   traefik:
     external: false
-  jackett:
+  flaresolverr:
     external: false
   wireguard:
     external: false
@@ -416,26 +459,6 @@ volumes:
     driver_opts:
       <<: *volume_conf
       device: /var/data/docker-host/media
-  plex-animes:
-    driver: local
-    driver_opts:
-      <<: *volume_conf
-      device: /var/data/docker-host/media/plex/animes
-  plex-movies:
-    driver: local
-    driver_opts:
-      <<: *volume_conf
-      device: /var/data/docker-host/media/plex/movies
-  plex-tvshows:
-    driver: local
-    driver_opts:
-      <<: *volume_conf
-      device: /var/data/docker-host/media/plex/tvshows
-  plex-animated-movies:
-    driver: local
-    driver_opts:
-      <<: *volume_conf
-      device: /var/data/docker-host/media/plex/animated-movies
   plex-database:
     driver: local
     driver_opts:
@@ -446,6 +469,16 @@ volumes:
     driver_opts:
       <<: *volume_conf
       device: /var/data/docker-host/plex/transcode
+  plex-media:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/media/plex
+  transmission-downloads:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/media/transmission
   jackett-config:
     driver: local
     driver_opts:
@@ -461,11 +494,6 @@ volumes:
     driver_opts:
       <<: *volume_conf
       device: /var/data/docker-host/transmission
-  transmission-downloads:
-    driver: local
-    driver_opts:
-      <<: *volume_conf
-      device: /var/data/docker-host/media/transmission
   wireguard-data:
     driver: local
     driver_opts:
@@ -486,4 +514,14 @@ volumes:
     driver_opts:
       <<: *volume_conf
       device: /var/data/docker-host/arr/sonarr
+  radarr-data:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/arr/radarr
+  prowlarr-data:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/arr/prowlarr
 ...
