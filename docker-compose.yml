@@ -128,7 +128,7 @@ services:
     environment:
       <<: *environment
       SERVERURL: wireguard.${APEX}
-      PEERS: minimacarino,ipad,iphone,windows
+      PEERS: kimsufi
       PEERDNS: 172.24.0.3
     volumes:
       - wireguard-data:/config
@@ -188,6 +188,9 @@ services:
       - 32412:32412/udp
       - 32413:32413/udp
       - 32414:42414/udp
+    environment:
+      <<: *environment
+      ADVERTISE_IP: 'https://plex.${APEX}'
     volumes:
       - plex-database:/config
       - plex-transcode:/transcode
@@ -234,7 +237,7 @@ services:
 
   prowlarr:
     <<: *defaults
-    image: lscr.io/linuxserver/prowlarr:develop
+    image: lscr.io/linuxserver/prowlarr:nightly
     container_name: prowlarr
     depends_on:
       - flaresolverr
