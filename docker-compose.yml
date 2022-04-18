@@ -422,6 +422,41 @@ services:
       timeout: 5s
       retries: 6
 
+  orealiz-wordpress:
+    <<: *defaults
+    image: wordpress
+    container_name: orealiz-wordpress
+    depends_on:
+      - orealiz-db
+    labels:
+      traefik.enable: true
+      traefik.http.routers.orealiz.entrypoints: websecure
+      traefik.http.routers.orealiz.rule: Host(`orealiz.${APEX}`)
+      traefik.http.routers.orealiz.tls: true
+      traefik.http.routers.orealiz.tls.certresolver: cloudflare
+      traefik.http.services.orealiz.loadbalancer.server.port: 80
+    volumes:
+      - orealiz-wordpress:/var/www/html
+    environment:
+      <<: *environment
+      WORDPRESS_DB_HOST: orealiz-db
+      WORDPRESS_DB_USER: orealiz
+      WORDPRESS_DB_PASSWORD: ${OREALIZ_DB_PASSWD}
+      WORDPRESS_DB_NAME: orealiz
+
+  orealiz-db:
+    <<: *defaults
+    image: lscr.io/linuxserver/mariadb
+    container_name: orealiz-db
+    volumes:
+      - orealiz-db:/config
+    environment:
+      <<: *environment
+      MYSQL_ROOT_PASSWORD: ${OREALIZ_DB_PASSWD}
+      MYSQL_DATABASE: orealiz
+      MYSQL_USER: orealiz
+      MYSQL_PASSWORD: ${OREALIZ_DB_PASSWD}
+
 networks:
   traefik:
     external: false
@@ -527,4 +562,14 @@ volumes:
     driver_opts:
       <<: *volume_conf
       device: /var/data/docker-host/arr/prowlarr
+  orealiz-wordpress:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/orealiz/wordpress
+  orealiz-db:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/orealiz/database
 ...
