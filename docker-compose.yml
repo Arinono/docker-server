@@ -230,10 +230,18 @@ services:
     container_name: flaresolverr
     networks:
       - flaresolverr
+      - traefik
     environment:
       <<: *environment
       LOG_LEVEL: debug
       CAPTCHA_SOLVER: hcaptcha-solver
+    labels:
+      traefik.enable: true
+      traefik.http.routers.flaresolverr.entrypoints: websecure
+      traefik.http.routers.flaresolverr.rule: Host(`flaresolverr.${APEX}`)
+      traefik.http.routers.flaresolverr.tls: true
+      traefik.http.routers.flaresolverr.tls.certresolver: cloudflare
+      traefik.http.services.flaresolverr.loadbalancer.server.port: 8191
 
   prowlarr:
     <<: *defaults
