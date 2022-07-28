@@ -475,11 +475,62 @@ services:
       MYSQL_USER: orealiz
       MYSQL_PASSWORD: ${OREALIZ_DB_PASSWD}
 
+  searxng-redis:
+    <<: *defaults
+    container_name: searxng-redis
+    image: redis:alpine
+    command: redis-server --save "" --apendonly "no"
+    networks:
+      - searxng
+    tmpfs:
+      - /var/lib/redis
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
+
+  searxng:
+    <<: *defaults
+    container_name: searxng
+    image: searxng/searxng
+    networks:
+      - searxng
+      - traefik
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      <<: *environment
+      SEARXNG_BASE_URL: https://search.${APEX}/
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "1"
+    labels:
+      traefik.enable: true
+      traefik.http.routers.searxng.entrypoints: websecure
+      traefik.http.routers.searxng.rule: Host(`search.${APEX}`)
+      traefik.http.routers.searxng.tls: true
+      traefik.http.routers.searxng.tls.certresolver: cloudflare
+      traefik.http.services.searxng.loadbalancer.server.port: 8080
+
 networks:
   traefik:
     external: false
   flaresolverr:
     external: false
+  searxng:
+    ipam:
+      driver: default
   wireguard:
     external: false
     name: wireguard
