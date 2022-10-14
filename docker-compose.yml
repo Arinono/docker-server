@@ -523,6 +523,23 @@ services:
       traefik.http.routers.searxng.tls.certresolver: cloudflare
       traefik.http.services.searxng.loadbalancer.server.port: 8080
 
+  gh-action-runner-1:
+    <<: *defaults
+    image: myoung34/github-runner:latest
+    environment:
+      <<: *environment
+      RUNNER_SCOPE: 'repo'
+      REPO_URL: ${GH_ACTION_RUNNER_1}
+      ACCESS_TOKEN: ${GH_ACTION_ACCESS_TOKEN}
+      RUNNER_NAME_PREFIX: "docker-server"
+      LABELS: linux,x64
+      RUNNER_WORKDIR: /tmp/runner/work
+    security_opt:
+      - label:disable
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/runner:/tmp/runner
+
 networks:
   traefik:
     external: false
