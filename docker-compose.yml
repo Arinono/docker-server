@@ -531,6 +531,20 @@ services:
       traefik.http.routers.searxng.tls.certresolver: cloudflare
       traefik.http.services.searxng.loadbalancer.server.port: 8080
 
+  excalidraw:
+    <<: *defaults
+    image: excalidraw/excalidraw
+    container_name: excalidraw
+    networks:
+      - traefik
+    labels:
+      traefik.enable: true
+      traefik.http.routers.excalidraw.entrypoints: websecure
+      traefik.http.routers.excalidraw.rule: Host(`draw.${APEX}`)
+      traefik.http.routers.excalidraw.tls: true
+      traefik.http.routers.excalidraw.tls.certresolver: cloudflare
+      traefik.http.services.excalidraw.loadbalancer.server.port: 80
+
   gh-action-runner-1:
     <<: *defaults
     image: myoung34/github-runner:latest
