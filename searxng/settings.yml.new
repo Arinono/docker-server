@@ -61,7 +61,7 @@ server:
   # If your instance owns a /etc/searxng/settings.yml file, then set the following
   # values there.
 
-  secret_key: "08718029ccf8bb2ac7dd4d7f0acffc1059ce1888d0691c04b7e3b774ba3306bc"  # change this!
+  secret_key: "557945e835a66d583fecf3d239190c90b23a3dd628bde7f1004d41b26e3fa1bb"  # change this!
   # Proxying image results through searx
   image_proxy: false
   # 1.0 and 1.1 are supported
@@ -145,6 +145,11 @@ outgoing:
   pool_maxsize: 20
   # See https://www.python-httpx.org/http2/
   enable_http2: true
+  # uncomment below section if you want to use a custom server certificate
+  # see https://www.python-httpx.org/advanced/#changing-the-verification-defaults
+  # and https://www.python-httpx.org/compatibility/#ssl-configuration
+  #  verify: ~/.mitmproxy/mitmproxy-ca-cert.cer
+  #
   # uncomment below section if you want to use a proxyq see: SOCKS proxies
   #   https://2.python-requests.org/en/latest/user/advanced/#proxies
   # are also supported: see

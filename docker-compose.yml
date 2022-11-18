@@ -366,8 +366,10 @@ services:
 
   shlink-db:
     <<: *defaults
-    image: postgres
+    image: postgres:14
     container_name: shlink-db
+    networks:
+      - shlink
     environment:
       <<: *environment
       POSTGRES_DB: shlink
@@ -389,6 +391,9 @@ services:
     container_name: shlink
     depends_on:
       - shlink-db
+    networks:
+      - traefik
+      - shlink
     environment:
       <<: *environment
       DEFAULT_DOMAIN: s.${APEX}
@@ -420,6 +425,9 @@ services:
     <<: *defaults
     image: shlinkio/shlink-web-client
     container_name: shlink-client
+    networks:
+      - traefik
+      - shlink
     depends_on:
       - shlink
     environment:
@@ -542,6 +550,8 @@ services:
 
 networks:
   traefik:
+    external: false
+  shlink:
     external: false
   flaresolverr:
     external: false
