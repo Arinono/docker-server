@@ -1,2 +1,4 @@
 .vscode
 start.sh
+protonmail-bridge-docker
+searxng/*.new

@@ -25,6 +25,7 @@ services:
       --providers.docker.endpoint=unix:///var/run/docker.sock
       --providers.docker.exposedbydefault=false
       --providers.docker.network=docker-server_traefik
+      --providers.file.filename=/dynamic_conf.toml
       --entrypoints.web.address=:80
       --entrypoints.websecure.address=:443
       --log.level=DEBUG
@@ -43,6 +44,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - traefik-certs:/letsencrypt
       - traefik-logs:/logs
+      - /var/data/docker-host/traefik/dynamic_conf.toml:/dynamic_conf.toml
     environment:
       <<: *environment
       CLOUDFLARE_DNS_API_TOKEN: ${CF_DNS_API_TOKEN}
@@ -580,12 +582,135 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /tmp/runner:/tmp/runner
 
+  mastodon-redis:
+    <<: *defaults
+    image: redis:latest
+    container_name: mastodon-redis
+    networks:
+      - mastodon
+    volumes:
+      - mastodon-redis:/data
+
+  mastodon-pg:
+    <<: *defaults
+    image: postgres
+    container_name: mastodon-pg
+    networks:
+      - mastodon
+    environment:
+      <<: *environment
+      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_USER: mastodon
+      POSTGRES_PASSWORD: ${PASSWD}
+      POSTGRES_DB: mastodon
+    volumes:
+      - mastodon-pg:/var/lib/postgresql/data
+
+  mastodon:
+    <<: *defaults
+    image: lscr.io/linuxserver/mastodon:latest
+    container_name: mastodon
+    depends_on:
+      - mastodon-redis
+      - mastodon-pg
+      - protonmail-bridge
+    networks:
+      - mastodon
+      - traefik
+    environment:
+      <<: *environment
+      LOCAL_DOMAIN: ${APEX}
+      REDIS_HOST: mastodon-redis
+      REDIS_PORT: 6379
+      DB_HOST: mastodon-pg
+      DB_USER: mastodon
+      DB_NAME: mastodon
+      DB_PASS: ${PASSWD}
+      DB_PORT: 5432
+      ES_ENABLED: "false"
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      OTP_SECRET: ${OTP_SECRET}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      SMTP_SERVER: protonmail-bridge
+      SMTP_PORT: 1025
+      SMTP_LOGIN: aurelien@arino.io
+      SMTP_PASSWORD: ${SMTP_PASSWD}
+      SMTP_FROM_ADDRESS: social@arino.io
+      S3_ENABLED: "false"
+      WEB_DOMAIN: mammouth.${APEX}
+    volumes:
+      - mastodon-conf:/config
+    labels:
+      traefik.enable: true
+      traefik.http.routers.mastodon.entrypoints: websecure
+      traefik.http.routers.mastodon.rule: Host(`mammouth.${APEX}`)
+      traefik.http.routers.mastodon.tls: true
+      traefik.http.routers.mastodon.tls.certresolver: cloudflare
+      traefik.http.services.mastodon.loadbalancer.server.port: 443
+      traefik.http.services.mastodon.loadbalancer.serverstransport: ignorecert@file
+      traefik.http.services.mastodon.loadbalancer.server.scheme: https
+
+  protonmail-bridge:
+    <<: *defaults
+    build:
+      context: protonmail-bridge-docker/build
+    container_name: protonmail-bridge
+    volumes:
+      - protonmail:/root
+    networks:
+      - mastodon
+      - vaultwarden
+
+  vaulwarden:
+    <<: *defaults
+    image: vaultwarden/server
+    container_name: vaultwarden
+    depends_on:
+      - protonmail-bridge
+    networks:
+      - vaultwarden
+      - traefik
+    volumes:
+      - vw-data:/data
+    environment:
+      <<: *environment
+      SIGNUPS_ALLOWED: "false"
+      SIGNUPS_VERIFY: "true"
+      ADMIN_TOKEN: ${VW_ADMIN_TOKEN}
+      WEBSOCKET_ENABLED: "true"
+      SMTP_HOST: protonmail-bridge
+      SMTP_FROM: dev@arino.io
+      SMTP_PORT: 1025
+      SMTP_SECURITY: "off"
+      SMTP_USERNAME: dev@arino.io
+      SMTP_PASSWORD: ${SMTP_PASSWD}
+      DOMAIN: https://vault.${APEX}
+    labels:
+      traefik.enable: true
+      traefik.http.routers.vaultwarden-ui.entrypoints: websecure
+      traefik.http.routers.vaultwarden-ui.rule: Host(`vault.${APEX}`)
+      traefik.http.routers.vaultwarden-ui.tls: true
+      traefik.http.routers.vaultwarden-ui.tls.certresolver: cloudflare
+      traefik.http.services.vaultwarden-ui.loadbalancer.server.port: 80
+      traefik.http.routers.vaultwarden-ui.service: vaultwarden-ui
+      traefik.http.routers.vaultwarden-ws.entrypoints: websecure
+      traefik.http.routers.vaultwarden-ws.rule: Host(`vault.${APEX}`) && Path(`/notifications/hub`)
+      traefik.http.routers.vaultwarden-ws.tls: true
+      traefik.http.routers.vaultwarden-ws.tls.certresolver: cloudflare
+      traefik.http.routers.vaultwarden-ws.service: vaultwarden-ws
+      traefik.http.services.vaultwarden-ws.loadbalancer.server.port: 3012
+
 networks:
   traefik:
     external: false
   shlink:
     external: false
   flaresolverr:
+    external: false
+  mastodon:
+    external: false
+  vaultwarden:
     external: false
   searxng:
     ipam:
@@ -700,4 +825,29 @@ volumes:
     driver_opts:
       <<: *volume_conf
       device: /var/data/docker-host/orealiz/database
+  mastodon-conf:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/mastodon/config
+  mastodon-redis:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/mastodon/redis
+  mastodon-pg:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/mastodon/postgres
+  protonmail:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/protonmail
+  vw-data:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/vaultwarden
 ...
