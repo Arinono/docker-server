@@ -1,0 +1,6 @@
+[submodule "wuxia2kindle"]
+	path = wuxia2kindle
+	url = git@github.com:/Arinono/wuxia2kindle.git
+[submodule "n2agestion"]
+	path = n2agestion
+	url = git@github.com:/arinono/n2agestion.git

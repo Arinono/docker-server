@@ -28,6 +28,7 @@ services:
       --providers.file.filename=/dynamic_conf.toml
       --entrypoints.web.address=:80
       --entrypoints.websecure.address=:443
+      --entrypoints.proton.address=:25
       --log.level=DEBUG
       --log.filePath=/logs/traefik.log
       --log.format=json
@@ -40,6 +41,7 @@ services:
     ports:
       - 80:80
       - 443:443
+      - 25:25/tcp
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - traefik-certs:/letsencrypt
@@ -72,7 +74,7 @@ services:
     restart: always
     container_name: certdump
     privileged: true
-    command: 'file --watch --domain-subdir=true --version v2'
+    command: 'file --watch --domain-subdir=true --version v2 --crt-ext=.pem --key-ext=.pem'
     volumes:
       - /var/data/docker-host/traefik/certs/acme.json:/acme.json:ro
       - traefik-dump:/dump
@@ -99,24 +101,6 @@ services:
       traefik.http.routers.portainer.tls.certresolver: cloudflare
       traefik.http.services.portainer.loadbalancer.server.port: 9000
   
-  amp-reverse-proxy:
-    <<: *defaults
-    build:
-      context: amp.arino.io
-    container_name: amp.arino.io-reverse-proxy
-    healthcheck:
-      test: ["CMD", "service", "nginx", "status"]
-      interval: 5s
-      timeout: 5s
-      retries: 6
-    labels:
-      traefik.enable: true
-      traefik.http.routers.amp-arino-io.entrypoints: websecure
-      traefik.http.routers.amp-arino-io.rule: Host(`amp.${APEX}`)
-      traefik.http.routers.amp-arino-io.tls: true
-      traefik.http.routers.amp-arino-io.tls.certresolver: cloudflare
-      traefik.http.services.amp-arino-io.loadbalancer.server.port: 80
-
   personal-site-to-netlify:
     <<: *defaults
     build:
@@ -162,7 +146,7 @@ services:
 
   pihole:
     <<: *defaults
-    image: pihole/pihole
+    image: pihole/pihole:2023.02.1
     container_name: pihole
     depends_on:
       - wireguard
@@ -507,7 +491,7 @@ services:
     <<: *defaults
     container_name: searxng-redis
     image: redis:alpine
-    command: redis-server --save "" --apendonly "no"
+    command: redis-server --save "" --appendonly "no"
     networks:
       - searxng
     tmpfs:
@@ -565,102 +549,28 @@ services:
       traefik.http.routers.excalidraw.tls.certresolver: cloudflare
       traefik.http.services.excalidraw.loadbalancer.server.port: 80
 
-  gh-action-runner-1:
-    <<: *defaults
-    image: myoung34/github-runner:latest
-    environment:
-      <<: *environment
-      RUNNER_SCOPE: 'repo'
-      REPO_URL: ${GH_ACTION_RUNNER_1}
-      ACCESS_TOKEN: ${GH_ACTION_ACCESS_TOKEN}
-      RUNNER_NAME_PREFIX: "docker-server"
-      LABELS: linux,x64
-      RUNNER_WORKDIR: /tmp/runner/work
-    security_opt:
-      - label:disable
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /tmp/runner:/tmp/runner
-
-  mastodon-redis:
-    <<: *defaults
-    image: redis:latest
-    container_name: mastodon-redis
-    networks:
-      - mastodon
-    volumes:
-      - mastodon-redis:/data
-
-  mastodon-pg:
-    <<: *defaults
-    image: postgres
-    container_name: mastodon-pg
-    networks:
-      - mastodon
-    environment:
-      <<: *environment
-      PGDATA: /var/lib/postgresql/data/pgdata
-      POSTGRES_USER: mastodon
-      POSTGRES_PASSWORD: ${PASSWD}
-      POSTGRES_DB: mastodon
-    volumes:
-      - mastodon-pg:/var/lib/postgresql/data
-
-  mastodon:
-    <<: *defaults
-    image: lscr.io/linuxserver/mastodon:latest
-    container_name: mastodon
-    depends_on:
-      - mastodon-redis
-      - mastodon-pg
-      - protonmail-bridge
-    networks:
-      - mastodon
-      - traefik
-    environment:
-      <<: *environment
-      LOCAL_DOMAIN: ${APEX}
-      REDIS_HOST: mastodon-redis
-      REDIS_PORT: 6379
-      DB_HOST: mastodon-pg
-      DB_USER: mastodon
-      DB_NAME: mastodon
-      DB_PASS: ${PASSWD}
-      DB_PORT: 5432
-      ES_ENABLED: "false"
-      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
-      OTP_SECRET: ${OTP_SECRET}
-      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
-      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
-      SMTP_SERVER: protonmail-bridge
-      SMTP_PORT: 1025
-      SMTP_LOGIN: aurelien@arino.io
-      SMTP_PASSWORD: ${SMTP_PASSWD}
-      SMTP_FROM_ADDRESS: social@arino.io
-      S3_ENABLED: "false"
-      WEB_DOMAIN: mammouth.${APEX}
-    volumes:
-      - mastodon-conf:/config
-    labels:
-      traefik.enable: true
-      traefik.http.routers.mastodon.entrypoints: websecure
-      traefik.http.routers.mastodon.rule: Host(`mammouth.${APEX}`)
-      traefik.http.routers.mastodon.tls: true
-      traefik.http.routers.mastodon.tls.certresolver: cloudflare
-      traefik.http.services.mastodon.loadbalancer.server.port: 443
-      traefik.http.services.mastodon.loadbalancer.serverstransport: ignorecert@file
-      traefik.http.services.mastodon.loadbalancer.server.scheme: https
-
   protonmail-bridge:
     <<: *defaults
-    build:
-      context: protonmail-bridge-docker/build
+    build: protonmail-bridge-docker/build
     container_name: protonmail-bridge
     volumes:
+      - /var/data/docker-host/traefik/dump/smtp.arino.io/privatekey.pem:/root/key.pem:ro
+      - /var/data/docker-host/traefik/dump/smtp.arino.io/certificate.pem:/root/cert.pem:ro
       - protonmail:/root
     networks:
-      - mastodon
-      - vaultwarden
+      - traefik
+      - proton
+    ports:
+      - 1025:25/tcp
+    labels:
+      traefik.enable: true
+      traefik.tcp.routers.proton-smtp.entrypoints: proton
+      traefik.tcp.routers.proton-smtp.rule: HostSNI(`smtp.${APEX}`)
+      traefik.tcp.routers.proton-smtp.service: proton-smtp
+      traefik.tcp.routers.proton-smtp.tls: true
+      traefik.tcp.routers.proton-smtp.tls.passthrough: true
+      traefik.tcp.routers.proton-smtp.tls.certresolver: cloudflare
+      traefik.tcp.services.proton-smtp.loadbalancer.server.port: 25
 
   vaulwarden:
     <<: *defaults
@@ -669,7 +579,7 @@ services:
     depends_on:
       - protonmail-bridge
     networks:
-      - vaultwarden
+      - proton
       - traefik
     volumes:
       - vw-data:/data
@@ -679,10 +589,10 @@ services:
       SIGNUPS_VERIFY: "true"
       ADMIN_TOKEN: ${VW_ADMIN_TOKEN}
       WEBSOCKET_ENABLED: "true"
-      SMTP_HOST: protonmail-bridge
+      SMTP_HOST: smtp.arino.io
       SMTP_FROM: dev@arino.io
       SMTP_PORT: 1025
-      SMTP_SECURITY: "off"
+      SMTP_SECURITY: "starttls"
       SMTP_USERNAME: dev@arino.io
       SMTP_PASSWORD: ${SMTP_PASSWD}
       DOMAIN: https://vault.${APEX}
@@ -701,6 +611,186 @@ services:
       traefik.http.routers.vaultwarden-ws.service: vaultwarden-ws
       traefik.http.services.vaultwarden-ws.loadbalancer.server.port: 3012
 
+#  valheim:
+#    <<: *defaults
+#    image: lloesche/valheim-server
+#    restart: unless-stopped
+#    container_name: valheim
+#    stop_grace_period: 2m
+#    networks:
+#      - traefik
+#    cap_add:
+#      - sys_nice
+#    volumes:
+#      - valheim-config:/config
+#      - valheim-data:/opt/valheim
+#    ports:
+#      - 9001:9001
+#      - 2456:2456/udp
+#    environment:
+#      <<: *environment
+#      SERVER_NAME: Arinono
+#      WORLD_NAME: Lachillance
+#      SERVER_PASS: ${VALHEIM_PASSWD}
+#      SERVER_PUBLIC: "false"
+#      DISCORD_WEBHOOK: ${DISCORD_VALHEIM_WH}
+#      DISCORD_RESTART: "Restarting Valheim server in 1 minute!"
+#      PRE_RESTART_HOOK: 'curl -sfSL -X POST -H "Content-Type: application/json" -d "{\"username\":\"Valheim\",\"content\":\"$$DISCORD_RESTART\"}" "$$DISCORD_WEBHOOK" && sleep 60'
+#      DISCORD_START: "Starting Valheim server $$SERVER_NAME"
+#      PRE_BOOTSTRAP_HOOK: 'curl -sfSL -X POST -H "Content-Type: application/json" -d "{\"username\":\"Valheim\",\"content\":\"$$(eval echo $$DISCORD_START)\"}" "$$DISCORD_WEBHOOK"'
+#      DISCORD_STARTED: "Server started $$SERVER_NAME"
+#      POST_START_HOOK: 'curl -sfSL -X POST -H "Content-Type: application/json" -d "{\"username\":\"Valheim\",\"content\":\"$$(eval echo $$DISCORD_STARTED)\"}" "$$DISCORD_WEBHOOK"'
+#      DISCORD_RESTARTED: "Server restarted"
+#      POST_RESTART_HOOK: 'curl -sfSL -X POST -H "Content-Type: application/json" -d "{\"username\":\"Valheim\",\"content\":\"$$DISCORD_RESTARTED\"}" "$$DISCORD_WEBHOOK"'
+#      DISCORD_STOPPING: "Stopping Valheim server (now, cheh...)"
+#      PRE_SERVER_SHUTDOWN_HOOK: 'curl -sfSL -X POST -H "Content-Type: application/json" -d "{\"username\":\"Valheim\",\"content\":\"$$DISCORD_STOPPING\"}" "$$DISCORD_WEBHOOK"'
+#      DISCORD_STOPPED: "Server stopped"
+#      POST_SERVER_RUN_HOOK: 'curl -sfSL -X POST -H "Content-Type: application/json" -d "{\"username\":\"Valheim\",\"content\":\"$$DISCORD_RESTART\"}" "$$DISCORD_WEBHOOK"'
+#      SUPERVISOR_HTTP: "true"
+#      SUPERVISOR_HTTP_USER: arinono
+#      SUPERVISOR_HTTP_PASS: ${PASSWD}
+#    labels:
+#      traefik.enable: true
+#      traefik.http.routers.valheim-supervisor.entrypoints: websecure
+#      traefik.http.routers.valheim-supervisor.rule: Host(`valheim-supervisor.${APEX}`)
+#      traefik.http.routers.valheim-supervisor.tls: true
+#      traefik.http.routers.valheim-supervisor.tls.certresolver: cloudflare
+#      traefik.http.services.valheim-supervisor.loadbalancer.server.port: 9001
+#      traefik.http.routers.valheim-supervisor.service: valheim-supervisor
+#      traefik.udp.routers.valheim-udp.entrypoints: websecure
+#      traefik.udp.routers.valheim-udp.tls: true
+#      traefik.udp.routers.valheim-udp.tls.certresolver: cloudflare
+#      traefik.udp.routers.valheim-udp.service: valheim-udp
+#      traefik.udp.services.valheim-udp.loadbalancer.server.port: 2456
+#
+#  valheim2:
+#    <<: *defaults
+#    image: lloesche/valheim-server
+#    restart: unless-stopped
+#    container_name: valheim2
+#    stop_grace_period: 2m
+#    networks:
+#      - traefik
+#    cap_add:
+#      - sys_nice
+#    volumes:
+#      - valheim2-config:/config
+#      - valheim2-data:/opt/valheim
+#    ports:
+#      - 2457:2456/udp
+#    environment:
+#      <<: *environment
+#      SERVER_NAME: Arinono
+#      WORLD_NAME: Phoenix
+#      SERVER_PASS: ${VALHEIM2_PASSWD}
+#      SERVER_PUBLIC: "false"
+#    labels:
+#      traefik.enable: true
+#      traefik.udp.routers.phoenix-udp.entrypoints: websecure
+#      traefik.udp.routers.phoenix-udp.tls: true
+#      traefik.udp.routers.phoenix-udp.tls.certresolver: cloudflare
+#      traefik.udp.routers.phoenix-udp.service: phoenix-udp
+#      traefik.udp.services.phoenix-udp.loadbalancer.server.port: 2456
+
+  ntfy:
+    <<: *defaults
+    image: binwiederhier/ntfy
+    container_name: ntfy
+    command:
+      - serve
+    networks:
+      - traefik
+    volumes:
+      - ntfy:/etc/ntfy
+      - ntfy_cache:/var/cache/ntfy 
+    labels: 
+      traefik.enable: true
+      traefik.http.routers.ntfy.entrypoints: websecure
+      traefik.http.routers.ntfy.rule: Host(`ntfy.${APEX}`)
+      traefik.http.routers.ntfy.tls: true
+      traefik.http.routers.ntfy.tls.certresolver: cloudflare
+      traefik.http.services.ntfy.loadbalancer.server.port: 80
+        # traefik.http.routers.ntfy.middlewares: basic-auth
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --tries=1 http://localhost:80/v1/health -O - | grep -Eo '\"healthy\"\\s*:\\s*true' || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  w2k-db:
+    <<: *defaults
+    image: postgres:14
+    container_name: wuxia2kindle-db
+    networks:
+      - w2k
+    environment:
+      <<: *environment
+      POSTGRES_DB: wuxia2kindle
+      POSTGRES_USER: wuxia2kindle
+      POSTGRES_PASSWORD: ${W2K_DB_PASSWD}
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - w2k-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "wuxia2kindle", "-d", "wuxia2kindle"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+
+  w2k-app:
+    <<: *defaults
+    build:  wuxia2kindle
+    container_name: wuxia2kindle
+    depends_on:
+      - w2k-db
+      - protonmail-bridge
+    networks:
+      - traefik
+      - w2k
+      - proton
+    environment:
+      <<: *environment
+      DATABASE_URL: ${W2K_DB_URL}
+      SMTP_SERVER: smtp.arino.io
+      SMTP_PORT: 1025
+      SMTP_USER: kindle@arino.io
+      SMTP_PASSWORD: ${SMTP_PASSWD}
+      SEND_TO: arinono@kindle.com
+      API_URL: https://api.wuxia2kindle.${APEX}
+      API_TOKEN: ${BASIC_HEADER}
+    labels:
+      traefik.enable: true
+      traefik.http.routers.w2kapp.entrypoints: websecure
+      traefik.http.routers.w2kapp.rule: Host(`api.wuxia2kindle.${APEX}`)
+      traefik.http.routers.w2kapp.tls: true
+      traefik.http.routers.w2kapp.tls.certresolver: cloudflare
+      traefik.http.services.w2kapp.loadbalancer.server.port: 3000
+      traefik.http.routers.w2kapp.service: w2kapp
+      traefik.http.routers.w2kapp.middlewares: basic-auth
+      traefik.http.routers.w2kclient.entrypoints: websecure
+      traefik.http.routers.w2kclient.rule: Host(`client.wuxia2kindle.${APEX}`)
+      traefik.http.routers.w2kclient.tls: true
+      traefik.http.routers.w2kclient.tls.certresolver: cloudflare
+      traefik.http.services.w2kclient.loadbalancer.server.port: 8000
+      traefik.http.routers.w2kclient.middlewares: basic-auth
+      traefik.http.routers.w2kclient.service: w2kclient
+
+  n2agestion:
+    <<: *defaults
+    image: nginx
+    container_name: n2agestion
+    volumes:
+      - ./n2agestion:/usr/share/nginx/html
+    labels:
+      traefik.enable: true
+      traefik.http.routers.n2agestion.entrypoints: websecure
+      traefik.http.routers.n2agestion.rule: Host(`n2agestion.${APEX}`)
+      traefik.http.routers.n2agestion.tls: true
+      traefik.http.routers.n2agestion.tls.certresolver: cloudflare
+      traefik.http.services.n2agestion.loadbalancer.server.port: 80
+      traefik.http.routers.n2agestion.service: n2agestion
+
 networks:
   traefik:
     external: false
@@ -708,9 +798,9 @@ networks:
     external: false
   flaresolverr:
     external: false
-  mastodon:
+  proton:
     external: false
-  vaultwarden:
+  w2k:
     external: false
   searxng:
     ipam:
@@ -850,4 +940,39 @@ volumes:
     driver_opts:
       <<: *volume_conf
       device: /var/data/docker-host/vaultwarden
+  valheim-data:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/valheim/data
+  valheim-config:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/valheim/config
+  valheim2-data:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/valheim2/data
+  valheim2-config:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/valheim2/config
+  ntfy:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/ntfy/etc
+  ntfy_cache:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/ntfy/cache
+  w2k-db:
+    driver: local
+    driver_opts:
+      <<: *volume_conf
+      device: /var/data/docker-host/wuxia2kindle/postgres
 ...
