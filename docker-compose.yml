@@ -761,19 +761,24 @@ services:
       API_TOKEN: ${BASIC_HEADER}
     labels:
       traefik.enable: true
+      traefik.http.middlewares.cors.headers.accesscontrolallowmethods: "GET,OPTIONS,PATCH,POST"
+      traefik.http.middlewares.cors.headers.accesscontrolallowheaders: "*"
+      traefik.http.middlewares.cors.headers.accesscontrolalloworiginlist: https://client.wuxia2kindle.${APEX}, https://www.wuxiaworld.com
+      traefik.http.middlewares.cors.headers.accesscontrolmaxage: "100"
+      traefik.http.middlewares.cors.headers.addvaryheader: "true"
       traefik.http.routers.w2kapp.entrypoints: websecure
       traefik.http.routers.w2kapp.rule: Host(`api.wuxia2kindle.${APEX}`)
       traefik.http.routers.w2kapp.tls: true
       traefik.http.routers.w2kapp.tls.certresolver: cloudflare
       traefik.http.services.w2kapp.loadbalancer.server.port: 3000
       traefik.http.routers.w2kapp.service: w2kapp
-      traefik.http.routers.w2kapp.middlewares: basic-auth
+      traefik.http.routers.w2kapp.middlewares: cors@docker, basic-auth@docker
       traefik.http.routers.w2kclient.entrypoints: websecure
       traefik.http.routers.w2kclient.rule: Host(`client.wuxia2kindle.${APEX}`)
       traefik.http.routers.w2kclient.tls: true
       traefik.http.routers.w2kclient.tls.certresolver: cloudflare
       traefik.http.services.w2kclient.loadbalancer.server.port: 8000
-      traefik.http.routers.w2kclient.middlewares: basic-auth
+      traefik.http.routers.w2kclient.middlewares: basic-auth@docker
       traefik.http.routers.w2kclient.service: w2kclient
 
   n2agestion:
