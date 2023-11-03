@@ -783,18 +783,21 @@ services:
 
   n2agestion:
     <<: *defaults
-    image: nginx
-    container_name: n2agestion
-    volumes:
-      - ./n2agestion:/usr/share/nginx/html
+    build:
+      context: n2agestion.arino.io
+    container_name: n2agestion.arino.io-reverse-proxy
+    healthcheck:
+      test: ["CMD", "service", "nginx", "status"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
     labels:
       traefik.enable: true
-      traefik.http.routers.n2agestion.entrypoints: websecure
-      traefik.http.routers.n2agestion.rule: Host(`n2agestion.${APEX}`)
-      traefik.http.routers.n2agestion.tls: true
-      traefik.http.routers.n2agestion.tls.certresolver: cloudflare
-      traefik.http.services.n2agestion.loadbalancer.server.port: 80
-      traefik.http.routers.n2agestion.service: n2agestion
+      traefik.http.routers.n2agestion-arino-io.entrypoints: websecure
+      traefik.http.routers.n2agestion-arino-io.rule: Host(`n2agestion.${APEX}`)
+      traefik.http.routers.n2agestion-arino-io.tls: true
+      traefik.http.routers.n2agestion-arino-io.tls.certresolver: cloudflare
+      traefik.http.services.n2agestion-arino-io.loadbalancer.server.port: 80
 
 networks:
   traefik:
