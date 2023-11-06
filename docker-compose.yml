@@ -611,6 +611,35 @@ services:
       traefik.http.routers.vaultwarden-ws.service: vaultwarden-ws
       traefik.http.services.vaultwarden-ws.loadbalancer.server.port: 3012
 
+  vaultwarden-backup:
+    <<: *defaults
+    container_name: vaultwarden-backup
+    image: bruceforce/vaultwarden-backup
+    init: true
+    depends_on:
+      - vaulwarden
+    volumes:
+      - vw-data:/data/
+      - ./vw_backup:/backup
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      <<: *environment
+      BACKUP_ADD_DATABASE: "true"
+      BACKUP_ADD_ATTACHMENTS: "true"
+      BACKUP_ADD_CONFIG_JSON: "true"
+      BACKUP_DIR_PERMISSIONS: "777"
+      DELETE_AFTER: 5
+      TIMESTAMP: "true"
+      CRON_TIME: "0 5 * * *"
+      TZ: "Europe/Paris"
+      BACKUP_DIR: "/backup"
+      LOG_DIR: "/backup/logs"
+      LOG_LEVEL: "INFO"
+      LOG_CLEAR_AT_START: "true"
+      BACKUP_ON_STARTUP: "true"
+      ENCRYPTION_PASSWORD: ${VW_BACKUP_KEY}
+
 #  valheim:
 #    <<: *defaults
 #    image: lloesche/valheim-server
